@@ -301,6 +301,7 @@ size_t zmalloc_get_rss(void) {
 #include <mach/task.h>
 #include <mach/mach_init.h>
 
+// 物理地址空间大小
 size_t zmalloc_get_rss(void) {
     task_t task = MACH_PORT_NULL;
     struct task_basic_info t_info;
@@ -328,6 +329,8 @@ float zmalloc_get_fragmentation_ratio(size_t rss) {
     return (float)rss/zmalloc_used_memory();
 }
 
+// Private RSS- 私有占有内存数据
+// 进程实际占有的内存数据，具体含义参见 /proc/self/smaps
 #if defined(HAVE_PROC_SMAPS)
 size_t zmalloc_get_private_dirty(void) {
     char line[1024];
