@@ -44,6 +44,14 @@ void zlibc_free(void *ptr) {
 #include "config.h"
 #include "zmalloc.h"
 
+/**
+*	PREFIX_SIZE is in the front of the real-memory, to save memory size.
+*	when malloc size, will malloc:PREFIX_SIZE + size.
+*	--mengzhejin
+*	
+*	HAVE_MALLOC_SIZE--> PREFIX_SIZE=0 ? 
+*	else 
+*/
 #ifdef HAVE_MALLOC_SIZE
 #define PREFIX_SIZE (0)
 #else
@@ -54,7 +62,11 @@ void zlibc_free(void *ptr) {
 #endif
 #endif
 
-/* Explicitly override malloc/free etc when using tcmalloc. */
+/**
+*	use tc_malloc or je_calloc to override malloc
+*	--mengzhejin
+*
+*/
 #if defined(USE_TCMALLOC)
 #define malloc(size) tc_malloc(size)
 #define calloc(count,size) tc_calloc(count,size)
@@ -88,6 +100,12 @@ void zlibc_free(void *ptr) {
 
 #endif
 
+/**
+*	1 thread-safe or not, malloc and free, change {static used_memory}
+*	2 align used_memory to integer times of sizeof(long)
+*
+*	--mengzhejin
+*/
 #define update_zmalloc_stat_alloc(__n) do { \
     size_t _n = (__n); \
     if (_n&(sizeof(long)-1)) _n += sizeof(long)-(_n&(sizeof(long)-1)); \
@@ -108,30 +126,50 @@ void zlibc_free(void *ptr) {
     } \
 } while(0)
 
+
+/**
+*	static used_memory
+*	static zmalloc_thread_safe
+*	used_memory_mutex
+*	for statistic memory, if thread_safe or not
+*	--mengzhejin
+*/ 
 static size_t used_memory = 0;
 static int zmalloc_thread_safe = 0;
 pthread_mutex_t used_memory_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// out of memory(oom), abort
 static void zmalloc_default_oom(size_t size) {
     fprintf(stderr, "zmalloc: Out of memory trying to allocate %zu bytes\n",
         size);
     fflush(stderr);
     abort();
 }
-
+// function pointer zmalloc_oom_handler to zmalloc_default_oom
+// used this handler when malloc failed
 static void (*zmalloc_oom_handler)(size_t) = zmalloc_default_oom;
 
+
+/**
+*	1, Redis malloc implement as: PREFIX_SIZE + realSize.
+*		PREFIX_SIZE to save the real memory size
+*
+*	2, malloc(size+PREFIX_SIZE), return real memory start address
+*
+*	3, see impement of zmalloc, the other functions is the same.
+*
+*/
 void *zmalloc(size_t size) {
     void *ptr = malloc(size+PREFIX_SIZE);
 
     if (!ptr) zmalloc_oom_handler(size);
-#ifdef HAVE_MALLOC_SIZE
+#ifdef HAVE_MALLOC_SIZE  // PREFIX_SIZE == 0
     update_zmalloc_stat_alloc(zmalloc_size(ptr));
     return ptr;
-#else
+#else					// PREFIX_SIZE != 0
     *((size_t*)ptr) = size;
     update_zmalloc_stat_alloc(size+PREFIX_SIZE);
-    return (char*)ptr+PREFIX_SIZE;
+    return (char*)ptr+PREFIX_SIZE;	// return the real start address
 #endif
 }
 
@@ -178,10 +216,12 @@ void *zrealloc(void *ptr, size_t size) {
 #endif
 }
 
+
+
 /* Provide zmalloc_size() for systems where this function is not provided by
  * malloc itself, given that in that case we store a header with this
  * information as the first bytes of every allocation. */
-#ifndef HAVE_MALLOC_SIZE
+#ifndef HAVE_MALLOC_SIZE	// PREFIX_SIZE != 0
 size_t zmalloc_size(void *ptr) {
     void *realptr = (char*)ptr-PREFIX_SIZE;
     size_t size = *((size_t*)realptr);
@@ -192,6 +232,11 @@ size_t zmalloc_size(void *ptr) {
 }
 #endif
 
+
+/**
+*	Note:ptr is the real memory address, so zfree will free(ptr-PREFIX_SIZE)
+*
+**/
 void zfree(void *ptr) {
 #ifndef HAVE_MALLOC_SIZE
     void *realptr;
@@ -199,11 +244,11 @@ void zfree(void *ptr) {
 #endif
 
     if (ptr == NULL) return;
-#ifdef HAVE_MALLOC_SIZE
+#ifdef HAVE_MALLOC_SIZE			// PREFIX_SIZE == 0
     update_zmalloc_stat_free(zmalloc_size(ptr));
     free(ptr);
-#else
-    realptr = (char*)ptr-PREFIX_SIZE;
+#else							// PREFIX_SIZE != 0
+    realptr = (char*)ptr-PREFIX_SIZE;	// ptr is real memory ptr, ptr-PREFIX_SIZE point to the start of PREFIX
     oldsize = *((size_t*)realptr);
     update_zmalloc_stat_free(oldsize+PREFIX_SIZE);
     free(realptr);
@@ -218,6 +263,12 @@ char *zstrdup(const char *s) {
     return p;
 }
 
+
+
+
+/*************************************************************************************
+*			The following is some memory-statistic function! 
+**************************************************************************************/
 size_t zmalloc_used_memory(void) {
     size_t um;
 
@@ -245,6 +296,9 @@ void zmalloc_set_oom_handler(void (*oom_handler)(size_t)) {
     zmalloc_oom_handler = oom_handler;
 }
 
+
+
+
 /* Get the RSS information in an OS-specific way.
  *
  * WARNING: the function zmalloc_get_rss() is not designed to be fast
@@ -255,6 +309,16 @@ void zmalloc_set_oom_handler(void (*oom_handler)(size_t)) {
  * function RedisEstimateRSS() that is a much faster (and less precise)
  * version of the function. */
 
+/**
+*	RSS---It's the amount of RAM actually used by the process - as opposed
+		to that which has been paged (swapped) out.  For example, a 10 MB
+		process might have an RSS of 8 MB; this means that 8 MB of the
+		process' virtual memory is in RAM, and the other 2 MB is paged
+		out to disk.
+	See RSS: Resident set size
+*
+*	1  HAVE_PROC_STAT
+**/
 #if defined(HAVE_PROC_STAT)
 #include <unistd.h>
 #include <sys/types.h>
@@ -280,7 +344,7 @@ size_t zmalloc_get_rss(void) {
     p = buf;
     count = 23; /* RSS is the 24th field in /proc/<pid>/stat */
     while(p && count--) {
-        p = strchr(p,' ');
+        p = strchr(p,' ');	// strchr(str, c): serche the first index of in str
         if (p) p++;
     }
     if (!p) return 0;
@@ -292,6 +356,12 @@ size_t zmalloc_get_rss(void) {
     rss *= page;
     return rss;
 }
+
+/**
+*
+	2 HAVE_TASKINFO--when in some System provided TASKINFO
+	
+**/
 #elif defined(HAVE_TASKINFO)
 #include <unistd.h>
 #include <stdio.h>
@@ -301,7 +371,6 @@ size_t zmalloc_get_rss(void) {
 #include <mach/task.h>
 #include <mach/mach_init.h>
 
-// 物理地址空间大小
 size_t zmalloc_get_rss(void) {
     task_t task = MACH_PORT_NULL;
     struct task_basic_info t_info;
@@ -313,6 +382,10 @@ size_t zmalloc_get_rss(void) {
 
     return t_info.resident_size;
 }
+
+/**
+	3 return zmalloc_used_memory() Redis record!--estimated
+*/
 #else
 size_t zmalloc_get_rss(void) {
     /* If we can't get the RSS in an OS-specific way for this system just
@@ -324,13 +397,15 @@ size_t zmalloc_get_rss(void) {
 }
 #endif
 
+
+
 /* Fragmentation = RSS / allocated-bytes */
 float zmalloc_get_fragmentation_ratio(size_t rss) {
     return (float)rss/zmalloc_used_memory();
 }
 
-// Private RSS- 私有占有内存数据
-// 进程实际占有的内存数据，具体含义参见 /proc/self/smaps
+// Private RSS
+// see-- /proc/self/smaps
 #if defined(HAVE_PROC_SMAPS)
 size_t zmalloc_get_private_dirty(void) {
     char line[1024];
