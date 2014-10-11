@@ -40,6 +40,18 @@
 
 #include "util.h"
 
+
+/**
+*	模式匹配算法:  fuck  实现一个正则匹配还真不容易
+
+	pattern:		模式  支持 *  ?  []  ^ \  - 等正则表达式支持的符号
+	patternLen:		模式长度
+	string:			要匹配的字符串
+	stringLen:		要匹配字符串长度
+	nocase:			忽略大小写
+*	
+*
+*/
 /* Glob-style pattern matching. */
 int stringmatchlen(const char *pattern, int patternLen,
         const char *string, int stringLen, int nocase)
@@ -166,6 +178,9 @@ int stringmatchlen(const char *pattern, int patternLen,
 int stringmatch(const char *pattern, const char *string, int nocase) {
     return stringmatchlen(pattern,strlen(pattern),string,strlen(string),nocase);
 }
+
+
+
 
 /* Convert a string representing an amount of memory into the number of
  * bytes, so for instance memtoll("1Gi") will return 1073741824 that is
@@ -405,6 +420,8 @@ void getRandomHexChars(char *p, unsigned int len) {
     if (fp) fclose(fp);
 }
 
+
+
 /* Given the filename, return the absolute path as an SDS string, or NULL
  * if it fails for some reason. Note that "filename" may be an absolute path
  * already, this will be detected and handled correctly.
@@ -464,6 +481,7 @@ sds getAbsolutePath(char *filename) {
 int pathIsBaseName(char *path) {
     return strchr(path,'/') == NULL && strchr(path,'\\') == NULL;
 }
+
 
 #ifdef UTIL_TEST_MAIN
 #include <assert.h>
