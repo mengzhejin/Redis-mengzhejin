@@ -158,6 +158,10 @@ unsigned int dictGenCaseHashFunction(const unsigned char *buf, int len) {
     return hash;
 }
 
+
+
+
+
 /* ----------------------------- API implementation ------------------------- */
 
 /* Reset a hash table already initialized with ht_init().

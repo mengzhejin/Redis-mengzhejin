@@ -44,34 +44,49 @@
 /* Unused arguments generate annoying warnings... */
 #define DICT_NOTUSED(V) ((void) V)
 
+// 桶: key-value 
 typedef struct dictEntry {
     void *key;
+	// value类型是以下三者之一
     union {
         void *val;
         uint64_t u64;
         int64_t s64;
     } v;
+	// next
     struct dictEntry *next;
 } dictEntry;
 
+// 字典类型
 typedef struct dictType {
+	// 自定义字典的key-hash函数
     unsigned int (*hashFunction)(const void *key);
+	// key复制
     void *(*keyDup)(void *privdata, const void *key);
+	// value复制
     void *(*valDup)(void *privdata, const void *obj);
+	// key比较
     int (*keyCompare)(void *privdata, const void *key1, const void *key2);
+	// value构造
     void (*keyDestructor)(void *privdata, void *key);
+	// value释放
     void (*valDestructor)(void *privdata, void *obj);
 } dictType;
 
+
+
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
+// 字典 hashtable
 typedef struct dictht {
     dictEntry **table;
-    unsigned long size;
-    unsigned long sizemask;
-    unsigned long used;
+    unsigned long size;			// table大小
+    unsigned long sizemask;		// 掩码 ?
+    unsigned long used;			// 字典大小
 } dictht;
 
+
+// 字典: 包含2个字典htable
 typedef struct dict {
     dictType *type;
     void *privdata;
@@ -80,6 +95,7 @@ typedef struct dict {
     int iterators; /* number of iterators currently running */
 } dict;
 
+// 迭代器
 /* If safe is set to 1 this is a safe iterator, that means, you can call
  * dictAdd, dictFind, and other functions against the dictionary even while
  * iterating. Otherwise it is a non safe iterator, and only dictNext()
@@ -95,6 +111,12 @@ typedef void (dictScanFunction)(void *privdata, const dictEntry *de);
 
 /* This is the initial size of every hash table */
 #define DICT_HT_INITIAL_SIZE     4
+
+
+
+
+
+
 
 /* ------------------------------- Macros ------------------------------------*/
 #define dictFreeVal(d, entry) \
@@ -130,6 +152,7 @@ typedef void (dictScanFunction)(void *privdata, const dictEntry *de);
         (d)->type->keyCompare((d)->privdata, key1, key2) : \
         (key1) == (key2))
 
+// he--hashtable entry
 #define dictHashKey(d, key) (d)->type->hashFunction(key)
 #define dictGetKey(he) ((he)->key)
 #define dictGetVal(he) ((he)->v.val)
@@ -138,6 +161,11 @@ typedef void (dictScanFunction)(void *privdata, const dictEntry *de);
 #define dictSlots(d) ((d)->ht[0].size+(d)->ht[1].size)
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
 #define dictIsRehashing(ht) ((ht)->rehashidx != -1)
+
+
+
+
+
 
 /* API */
 dict *dictCreate(dictType *type, void *privDataPtr);
