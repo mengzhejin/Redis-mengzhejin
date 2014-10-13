@@ -55,6 +55,12 @@ list *listCreate(void)
 /* Free the whole list.
  *
  * This function can't fail. */
+ /***
+	注意list的释放方式
+	1  遍历list 释放每个node  里面的指针--所以list->free是自定义的
+	2  释放 node指针
+	3  释放 list指针
+ ***/
 void listRelease(list *list)
 {
     unsigned long len;
@@ -123,6 +129,11 @@ list *listAddNodeTail(list *list, void *value)
     return list;
 }
 
+/**
+	after==1  插入在 old_node 后面
+	after==0  前面
+
+***/
 list *listInsertNode(list *list, listNode *old_node, void *value, int after) {
     listNode *node;
 
@@ -171,6 +182,8 @@ void listDelNode(list *list, listNode *node)
     list->len--;
 }
 
+
+// 双向迭代器
 /* Returns a list iterator 'iter'. After the initialization every
  * call to listNext() will return the next element of the list.
  *
@@ -193,12 +206,13 @@ void listReleaseIterator(listIter *iter) {
     zfree(iter);
 }
 
+// 迭代器恢复到链表头部
 /* Create an iterator in the list private iterator structure */
 void listRewind(list *list, listIter *li) {
     li->next = list->head;
     li->direction = AL_START_HEAD;
 }
-
+// 迭代器恢复到链表尾部
 void listRewindTail(list *list, listIter *li) {
     li->next = list->tail;
     li->direction = AL_START_TAIL;
@@ -218,6 +232,7 @@ void listRewindTail(list *list, listIter *li) {
  * }
  *
  * */
+ // 返回当前迭代器指向的node 并将当前迭代器指向下一个
 listNode *listNext(listIter *iter)
 {
     listNode *current = iter->next;
@@ -290,7 +305,7 @@ listNode *listSearchKey(list *list, void *key)
     iter = listGetIterator(list, AL_START_HEAD);
     while((node = listNext(iter)) != NULL) {
         if (list->match) {
-            if (list->match(node->value, key)) {
+            if (list->match(node->value, key)) {	// 自定义的match来判断key是否匹配
                 listReleaseIterator(iter);
                 return node;
             }
@@ -325,6 +340,7 @@ listNode *listIndex(list *list, long index) {
 }
 
 /* Rotate the list removing the tail node and inserting it to the head. */
+// 将tail节点删除  移动到head
 void listRotate(list *list) {
     listNode *tail = list->tail;
 

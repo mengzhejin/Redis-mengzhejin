@@ -36,12 +36,23 @@
 #include <sys/types.h>
 #include <stdarg.h>
 
-typedef char *sds;
 
+/***
+
+	Simple Dynamic String
+	
+	sdshdr-- sds hanlder 每分配一个sds, 实际上先分配一个sdshdr, return sdshdr->buf 即sds 
+*
+	这样的话、1 已知sdshdr, sdshdr->buf获取到sds  2, 已知sds, 指针前移 sds-sizeof(struct sdshdr)获取到sdshdr
+	注意这一code trick
+
+	理解这一点、以下所有函数就好理解了
+*/
+typedef char *sds;	// sds---指向char的指针
 struct sdshdr {
-    int len;
-    int free;
-    char buf[];
+    int len;		// 记录buf长度
+    int free;		// 一开始可能buf长度==len==10  后面可能动态改变了为6  那么free==4
+    char buf[];		// 占位、不分配实际内存、 sizeof(struct sdshdr) == 8
 };
 
 static inline size_t sdslen(const sds s) {

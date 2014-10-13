@@ -52,7 +52,7 @@ sds sdsnewlen(const void *init, size_t initlen) {
     struct sdshdr *sh;
 
     if (init) {
-        sh = zmalloc(sizeof(struct sdshdr)+initlen+1);
+        sh = zmalloc(sizeof(struct sdshdr)+initlen+1);	// initlen是字符串长度、这里需要分配的长度需要 +1 (+'\0')
     } else {
         sh = zcalloc(sizeof(struct sdshdr)+initlen+1);
     }
@@ -102,6 +102,10 @@ void sdsfree(sds s) {
  * The output will be "2", but if we comment out the call to sdsupdatelen()
  * the output will be "6" as the string was modified but the logical length
  * remains 6 bytes. */
+ /***
+
+	动态字符串 例子如作者注释  如果刻意去更改 sh->buf的话 len和free都应该变化
+*/ 
 void sdsupdatelen(sds s) {
     struct sdshdr *sh = (void*) (s-(sizeof(struct sdshdr)));
     int reallen = strlen(s);
@@ -126,6 +130,10 @@ void sdsclear(sds s) {
  *
  * Note: this does not change the *length* of the sds string as returned
  * by sdslen(), but only the free buffer space we have. */
+ /***
+
+	增加 addlen大小空间 如果已经有这么大的话 则不需要
+*/
 sds sdsMakeRoomFor(sds s, size_t addlen) {
     struct sdshdr *sh, *newsh;
     size_t free = sdsavail(s);
@@ -139,7 +147,7 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
         newlen *= 2;
     else
         newlen += SDS_MAX_PREALLOC;
-    newsh = zrealloc(sh, sizeof(struct sdshdr)+newlen+1);
+    newsh = zrealloc(sh, sizeof(struct sdshdr)+newlen+1);//realloc即可  自动在原来的buf后面补充 
     if (newsh == NULL) return NULL;
 
     newsh->free = newlen - len;
@@ -152,11 +160,14 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
  *
  * After the call, the passed sds string is no longer valid and all the
  * references must be substituted with the new pointer returned by the call. */
+ /************
+	free部分移除
+ ********/
 sds sdsRemoveFreeSpace(sds s) {
     struct sdshdr *sh;
 
     sh = (void*) (s-(sizeof(struct sdshdr)));
-    sh = zrealloc(sh, sizeof(struct sdshdr)+sh->len+1);
+    sh = zrealloc(sh, sizeof(struct sdshdr)+sh->len+1);	// buf的 free部分 被自动截断 
     sh->free = 0;
     return sh->buf;
 }
@@ -191,6 +202,8 @@ size_t sdsAllocSize(sds s) {
  * following schema, to cat bytes coming from the kernel to the end of an
  * sds string without copying into an intermediate buffer:
  *
+ * 先makeRoom 再把数据读到free起点、最后 sdsIncrLen 修改len 和free
+ *
  * oldlen = sdslen(s);
  * s = sdsMakeRoomFor(s, BUFFER_SIZE);
  * nread = read(fd, s+oldlen, BUFFER_SIZE);
@@ -212,6 +225,11 @@ void sdsIncrLen(sds s, int incr) {
  *
  * if the specified length is smaller than the current length, no operation
  * is performed. */
+ /****
+
+ 	sds扩充len个0
+
+ ***/
 sds sdsgrowzero(sds s, size_t len) {
     struct sdshdr *sh = (void*)(s-(sizeof(struct sdshdr)));
     size_t totlen, curlen = sh->len;
@@ -229,6 +247,8 @@ sds sdsgrowzero(sds s, size_t len) {
     return s;
 }
 
+
+/***********************字符串连接****************************/
 /* Append the specified binary-safe string pointed by 't' of 'len' bytes to the
  * end of the specified sds string 's'.
  *
@@ -264,6 +284,9 @@ sds sdscatsds(sds s, const sds t) {
     return sdscatlen(s, t, sdslen(t));
 }
 
+
+/***********************拷贝覆盖原来的sds***************************/
+/********************************************************/
 /* Destructively modify the sds string 's' to hold the specified binary
  * safe string pointed by 't' of length 'len' bytes. */
 sds sdscpylen(sds s, const char *t, size_t len) {
@@ -289,6 +312,9 @@ sds sdscpy(sds s, const char *t) {
     return sdscpylen(s, t, strlen(t));
 }
 
+
+
+/************************sds到数字的转换***********************/
 /* Helper for sdscatlonglong() doing the actual number -> string
  * conversion. 's' must point to a string with room for at least
  * SDS_LLSTR_SIZE bytes.
@@ -366,6 +392,9 @@ sds sdsfromlonglong(long long value) {
 
     return sdsnewlen(buf,len);
 }
+
+
+
 
 /* Like sdscatpritf() but gets va_list instead of being variadic. */
 sds sdscatvprintf(sds s, const char *fmt, va_list ap) {

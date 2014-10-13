@@ -43,6 +43,8 @@ uint16_t intrev16(uint16_t v);
 uint32_t intrev32(uint32_t v);
 uint64_t intrev64(uint64_t v);
 
+/************BYTE_ORDER 的大小端模式 、BYTE_ORDER在config里根据系统类型设置大小端  **********/
+
 /* variants of the function doing the actual convertion only if the target
  * host is big endian */
 #if (BYTE_ORDER == LITTLE_ENDIAN)

@@ -48,6 +48,9 @@
 
 #define LZF_VERSION 0x0105 /* 1.5, API version */
 
+
+/*******************LZF压缩/解压缩算法  分别实现在lzf_c.c lzf_c.d 里******************/
+
 /*
  * Compress in_len bytes stored at the memory block starting at
  * in_data and write the result to out_data, up to a maximum length
