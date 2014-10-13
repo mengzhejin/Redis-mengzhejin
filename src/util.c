@@ -56,16 +56,19 @@
 int stringmatchlen(const char *pattern, int patternLen,
         const char *string, int stringLen, int nocase)
 {
+	/** 对 pattern 中的字符、 挨个匹配 */
     while(patternLen) {
-        switch(pattern[0]) {
+        switch(pattern[0]) {
+		// 匹配*  
         case '*':
-            while (pattern[1] == '*') {
+            while (pattern[1] == '*') {// 多个 * 连在一起没啥意义、 当一个处理即可
                 pattern++;
                 patternLen--;
             }
-            if (patternLen == 1)
+            if (patternLen == 1)	   // 就剩 * 了 , 匹配成功
                 return 1; /* match */
             while(stringLen) {
+				// 递归、查看pattern+1 是否与string匹配 (以确定 * 到哪个字符结束)
                 if (stringmatchlen(pattern+1, patternLen-1,
                             string, stringLen, nocase))
                     return 1; /* match */
@@ -74,12 +77,14 @@ int stringmatchlen(const char *pattern, int patternLen,
             }
             return 0; /* no match */
             break;
+		// 匹配 ?  只要string还有字符即可
         case '?':
             if (stringLen == 0)
                 return 0; /* no match */
             string++;
             stringLen--;
             break;
+		// 匹配 []
         case '[':
         {
             int not, match;
@@ -105,6 +110,7 @@ int stringmatchlen(const char *pattern, int patternLen,
                     patternLen++;
                     break;
                 } else if (pattern[1] == '-' && patternLen >= 3) {
+                	// 匹配 A-B之间任意字符
                     int start = pattern[0];
                     int end = pattern[2];
                     int c = string[0];
@@ -123,6 +129,7 @@ int stringmatchlen(const char *pattern, int patternLen,
                     if (c >= start && c <= end)
                         match = 1;
                 } else {
+                	// 直接匹配某一个字符
                     if (!nocase) {
                         if (pattern[0] == string[0])
                             match = 1;
@@ -142,12 +149,14 @@ int stringmatchlen(const char *pattern, int patternLen,
             stringLen--;
             break;
         }
+		// 
         case '\\':
             if (patternLen >= 2) {
                 pattern++;
                 patternLen--;
             }
             /* fall through */
+		// 字母匹配 忽略大小写 
         default:
             if (!nocase) {
                 if (pattern[0] != string[0])
@@ -182,6 +191,7 @@ int stringmatch(const char *pattern, const char *string, int nocase) {
 
 
 
+/*************  数字-字符串转化 ************/
 /* Convert a string representing an amount of memory into the number of
  * bytes, so for instance memtoll("1Gi") will return 1073741824 that is
  * (1024*1024*1024).
@@ -374,6 +384,10 @@ int d2string(char *buf, size_t len, double value) {
     return len;
 }
 
+
+
+
+/*********产生  Redis 运行的 run-id (用pid+时间)  标示一次 Redis运行 ********/
 /* Generate the Redis "Run ID", a SHA1-sized random number that identifies a
  * given execution of Redis, so that if you are talking with an instance
  * having run_id == A, and you reconnect and it has run_id == B, you can be
