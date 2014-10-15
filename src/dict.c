@@ -371,7 +371,7 @@ int dictRehashMilliseconds(dict *d, int ms) {
  * dictionary so that the hash table automatically migrates from H1 to H2
  * while it is actively used. */
  // rehash 一个桶
- // 仅 当 d->iterators == 0
+ // 仅 当 d->iterators == 0   安全迭代器为 0
  // 该函数在一些操作之前调用  以此保证rehash过程一点一点的进行
  // 
 static void _dictRehashStep(dict *d) {
@@ -866,7 +866,14 @@ static unsigned long rev(unsigned long v) {
  
  *	// 关键在于 cursor 的变化
  *	// cursor 的变化是根据二进制设计出的一套算法
- *	// 
+ *	// Redus 官方命令介绍 http://redis.io/commands/scan  介绍了提供 Scan 命令的初衷
+ 	//	即为什么有了 iterator 还要提供scan 
+ 	// Scan 是基于游标的迭代器  一次迭代完成后 返回下一次迭代需要使用的游标 
+ 	// 这样就不会阻塞  一次迭代使用较短时间 只迭代完成一部分元素
+ 	// 这就是它相对于 iterator 的区别
+
+ 	// 而游标 cursor 的变化即为 该算法设计的关键
+ 	// 其主要思想在于 cursor 从0 开始 但并不顺序变化 ( 0 1 2 )
  * 1) Initially you call the function using a cursor (v) value of 0.
  * 2) The function performs one step of the iteration, and returns the
  *    new cursor value that you must use in the next call.
@@ -886,55 +893,102 @@ static unsigned long rev(unsigned long v) {
  *
  	// 主要思想  参见这篇文章 http://chenzhenianqing.cn/articles/1101.html
  	// 通过二进制的方法 迭代 完 cursor 后 计算下一个 cursor 并不是直接将 cursor + 1 
- 	// 而是二进制反向方法 
+ 	// 而是二进制反向方法 next cursor = cursor翻转 , + 1 , 翻转
+ 	// 通过这种变化获取下一个cursor
+
+ 	// 这种算法还有一种形象的解释 : 迭代顺序用于从高位开始 依次将高位置 1
+ 	// 例如:size=8 时候  cursor 从 0 开始
+ 	// 000
+ 	// 100	---尝试第一位 01变化
+ 	// 010 110---已产生的序列 尝试第二位 01 变化
+ 	// 001 101 111 111	--已产生的数据 尝试第三位 01 变化
  * The algorithm used in the iteration was designed by Pieter Noordhuis.
  * The main idea is to increment a cursor starting from the higher order
  * bits, that is, instead of incrementing the cursor normally, the bits
  * of the cursor are reversed, then the cursor is incremented, and finally
  * the bits are reversed again.
  *
+ 	// 两次 call之间 可能已经完成了resize (注意是完成了 不是正在resize)
  * This strategy is needed because the hash table may be resized from one
  * call to the other call of the same iteration.
  *
+ 	// 利用 总是2倍的关系 resize 这一特点
+ 	// 注意 在resize后 其实hashFunction 并没有变 计算出来的hashcode是不变的
+ 	// 在新的hashtable里的下表计算方式 hashcode & mask  这个mask与老的mask相比就高位多一个1
  * dict.c hash tables are always power of two in size, and they
  * use chaining, so the position of an element in a given table is given
- * always by computing the bitwise AND between Hash(key) and SIZE-1
+ * always by computing the bitwise AND (按位and) between Hash(key) and SIZE-1
  * (where SIZE-1 is always the mask that is equivalent to taking the rest
  *  of the division between the Hash of the key and SIZE).
  *
+ 	// 例如table大小为16  那么掩码为 1111 
+ 	// 索引的计算为 hashcode & 1111    其实永远都只与hashcode的后四位有关
+ 	// 那么 如果table大小变为32  掩码为 11111  这时就至于hashcode的后五位有关 
+ 	// 关键在于 这两次的hashcode 是同一个hashcode
+ 	// 这一点要注意  它们内在具有关联性  其实该算法就是基于这样一个特点而设计的
+ 	// 参见下面作者举得例子 这一特性是如何工作的
  * For example if the current hash table size is 16, the mask is
  * (in binary) 1111. The position of a key in the hash table will be always
  * the last four bits of the hash output, and so forth.
  *
- 
+
+
 	table大小改变时的策略
  	
  * WHAT HAPPENS IF THE TABLE CHANGES IN SIZE?
  *
+ 	-----------------举例说明 该策略是如何工作的:---------------
+	1) size 扩大
+	2) size 缩小
+	3) 正在 rehash
+ 	
+ 	// 假设我们现在的hashtable大小为16 那么mask为 1111
+ 	// 假设这时我们已经完成了迭代 cursor 1100
  * If the hash table grows, elements can go anyway in one multiple of
  * the old bucket: for example let's say that we already iterated with
  * a 4 bit cursor 1100, since the mask is 1111 (hash table size = 16).
  *
+ 	// 这时候table resize 增大到了64 那么mask 为 111111 (已经完成resize, 正在rehash的情况下面再讨论)
+ 	// 那么 对于 已经在resize之前的表里 迭代过的 cursor=1100 链表里的所有元素 会rehash到新表什么地方去呢 ???
+ 	// 这个就是上面说过的特性 cursor=1100 里的所有元素 会rehash到  ??1100 里面 (两个问号可以随意取 0 1 来组合)
+ 	// 
  * If the hash table will be resized to 64 elements, and the new mask will
  * be 111111, the new buckets that you obtain substituting in ??1100
  * either 0 or 1, can be targeted only by keys that we already visited
  * when scanning the bucket 1100 in the smaller hash table.
  *
+ 	// 通过优先迭代高位的 cursor , 当table变大的时候 cursor 不需要重新开始
+ 	// 只需要继续按照 cursor 的变化顺序迭代即可---只需要just忽略 那些 后缀是 1100 的cursor(已经迭代过)
+ 	// 忽略 所有 后缀 是xxxx  已经迭代过的 cursor
  * By iterating the higher bits first, because of the inverted counter, the
  * cursor does not need to restart if the table size gets bigger, and will
  * just continue iterating with cursors that don't have '1100' at the end,
  * nor any other combination of final 4 bits already explored.
  *
+
+ // 同理 当table缩小的时候 例如 从 16 变为8
+ // 假设我们 在size=16时候 已经迭代过 0111和1111
+ // 那么在 size=8 时 我们不需要再迭代 111
  * Similarly when the table size shrinks over time, for example going from
  * 16 to 8, If a combination of the lower three bits (the mask for size 8
  * is 111) was already completely explored, it will not be visited again
  * as we are sure that, we tried for example, both 0111 and 1111 (all the
  * variations of the higher bit) so we don't need to test it again.
  *
- 	先遍历较小的table
- 	
+
+ 
+ // 那么 当正在做rehash的时候呢   ??????	
  * WAIT... YOU HAVE *TWO* TABLES DURING REHASHING!
  *
+	作者这里直接简化操作:迭代 较小的 size table(即 table0)
+	然后尝试迭代 该slot可能被rehash到 table1上去的位置
+
+	例如rehash正在进行 table0-size=8  table1-size=16
+	直接迭代table0即可 (就像只有一个table似的)  但是迭代时候 对于每个 cursor 尝试去table1里继续
+	例如 迭代 cursor=101的时候  在读完table0上该slot的数据后  接着尝试去table1上 读 0101和1101上的数据
+
+	显而易见: 这种策略 保证数据全部能读到 可能会重复一些数据 (读完table0的数据 接着去读table1 可能一部分数据rehash过来了)
+ 
  * Yes, this is true, but we always iterate the smaller one of the tables,
  * testing also all the expansions of the current cursor into the larger
  * table. So for example if the current cursor is 101 and we also have a
@@ -943,7 +997,10 @@ static unsigned long rev(unsigned long v) {
  * the larger one, if exists, is just an expansion of the smaller one.
  *
  
-   算法的限制
+   算法的限制--通过以上分析 其实显而易见
+   1) 重复值  由应用处理
+   2) 每次迭代必须返回 一个 桶里的所有元素, 包括正在rehash到table1的(如果正在做rehash)--因此也能保证不会有key漏掉
+   3)  reverse cursor 算法很难理解 但是这个注释是一个帮助 擦 !!!!
    
  * LIMITATIONS
  *
@@ -967,11 +1024,12 @@ unsigned long dictScan(dict *d,
 {
     dictht *t0, *t1;
     const dictEntry *de;
-    unsigned long m0, m1;
+    unsigned long m0, m1;	// 分别记录两个 mask
 
     if (dictSize(d) == 0) return 0;
 
     if (!dictIsRehashing(d)) {
+		// 没有做 rehash 不用管 直接在table0上完成迭代即可
         t0 = &(d->ht[0]);
         m0 = t0->sizemask;
 
@@ -983,6 +1041,8 @@ unsigned long dictScan(dict *d,
         }
 
     } else {
+    	// 正在做rehash 先迭代 table0 中的 cursor
+    	// 再补充迭代 table1 中的 cursor的补充 --见注释该补充如何产生
         t0 = &d->ht[0];
         t1 = &d->ht[1];
 
@@ -995,6 +1055,7 @@ unsigned long dictScan(dict *d,
         m0 = t0->sizemask;
         m1 = t1->sizemask;
 
+		// table0 中迭代
         /* Emit entries at cursor */
         de = t0->table[v & m0];
         while (de) {
@@ -1002,6 +1063,7 @@ unsigned long dictScan(dict *d,
             de = de->next;
         }
 
+		// 迭代table1 中的补充
         /* Iterate over indices in larger table that are the expansion
          * of the index pointed to by the cursor in the smaller table */
         do {
@@ -1021,8 +1083,10 @@ unsigned long dictScan(dict *d,
 
     /* Set unmasked bits so incrementing the reversed cursor
      * operates on the masked bits of the smaller table */
+    // 总是迭代小表
     v |= ~m0;
 
+	// cursor的变化算法  见注释
     /* Increment the reverse cursor */
     v = rev(v);
     v++;
