@@ -1,5 +1,7 @@
 /* anet.c -- Basic TCP socket stuff made a bit less boring
- *
+ *	
+	对tcp socket的封装--基本的tcp socket有一点犯、、、
+ 	
  * Copyright (c) 2006-2012, Salvatore Sanfilippo <antirez at gmail dot com>
  * All rights reserved.
  *
@@ -43,20 +45,31 @@
 #define AF_LOCAL AF_UNIX
 #endif
 
+/*******************
+	对tcp的封装 该模块比较简单 没有什么复杂的数据结构和宏定义 
+	都是一些直接的函数 将tcp socket操作封装起来
+	
+***************/
 int anetTcpConnect(char *err, char *addr, int port);
 int anetTcpNonBlockConnect(char *err, char *addr, int port);
 int anetTcpNonBlockBindConnect(char *err, char *addr, int port, char *source_addr);
 int anetUnixConnect(char *err, char *path);
 int anetUnixNonBlockConnect(char *err, char *path);
+
 int anetRead(int fd, char *buf, int count);
+
 int anetResolve(char *err, char *host, char *ipbuf, size_t ipbuf_len);
 int anetResolveIP(char *err, char *host, char *ipbuf, size_t ipbuf_len);
+
 int anetTcpServer(char *err, int port, char *bindaddr, int backlog);
 int anetTcp6Server(char *err, int port, char *bindaddr, int backlog);
 int anetUnixServer(char *err, char *path, mode_t perm, int backlog);
+
 int anetTcpAccept(char *err, int serversock, char *ip, size_t ip_len, int *port);
 int anetUnixAccept(char *err, int serversock);
+
 int anetWrite(int fd, char *buf, int count);
+
 int anetNonBlock(char *err, int fd);
 int anetEnableTcpNoDelay(char *err, int fd);
 int anetDisableTcpNoDelay(char *err, int fd);
