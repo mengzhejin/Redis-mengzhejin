@@ -31,6 +31,42 @@
 
 #include <sys/epoll.h>
 
+/**
+1 int epoll_create(int size);
+
+2 int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+
+1) op选项
+EPOLL_CTL_ADD：注册新的fd到epfd中；
+EPOLL_CTL_MOD：修改已经注册的fd的监听事件；
+EPOLL_CTL_DEL：从epfd中删除一个fd；
+
+2) epoll_event结构
+typedef union epoll_data {
+    void *ptr;
+    int fd;
+    __uint32_t u32;
+    __uint64_t u64;
+} epoll_data_t;
+
+struct epoll_event {
+    __uint32_t events; 
+    epoll_data_t data; 
+};
+
+3) __uint32_t events的值
+events可以是以下几个宏的集合：
+EPOLLIN ：表示对应的文件描述符可以读（包括对端SOCKET正常关闭）；
+EPOLLOUT：表示对应的文件描述符可以写；
+EPOLLPRI：表示对应的文件描述符有紧急的数据可读（这里应该表示有带外数据到来）；
+EPOLLERR：表示对应的文件描述符发生错误；
+EPOLLHUP：表示对应的文件描述符被挂断；
+EPOLLET： 将EPOLL设为边缘触发(Edge Triggered)模式，这是相对于水平触发(Level Triggered)来说的。
+EPOLLONESHOT：只监听一次事件，当监听完这次事件之后，如果还需要继续监听这个socket的话，需要再次把这个socket加入到EPOLL队列里
+
+3  int epoll_wait(int epfd, struct epoll_event * events, int maxevents, int timeout);
+
+**/
 typedef struct aeApiState {
     int epfd;
     struct epoll_event *events;
